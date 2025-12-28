@@ -1,0 +1,51 @@
+local BallConfig = {}
+
+BallConfig.Paths = {
+	REMOTE_EVENTS_FOLDER = "Ball_Events",
+	FLOOR_PART_NAME = "Floor",
+}
+
+BallConfig.Physics = {
+	FLOAT_HEIGHT = 2.5,
+	BASE_SPEED = 80,
+	START_SPEED = 80,
+	SPEED_INCREMENT = 1,
+	MAX_SPEED = 300,
+	DECELERATION = 0.998,
+	MIN_SPEED = 10,
+	BOUNCE_ENERGY_LOSS = 0.8,
+	GRAVITY = 0.5,
+	GRAVITY_THRESHOLD = 999,
+
+	MIN_BOUNCE_ANGLE = 45,
+	MIN_BOUNCE_SPEED = 30,
+	MAX_BOUNCES = 1,
+	GROUND_BOUNCE_ENERGY_LOSS = 0.9,
+}
+
+BallConfig.Parry = {
+	RANGE = 11,
+	COOLDOWN = 0.1,
+	TIMEOUT = 5,
+	MIN_PARRY_TIME = 0.05,
+	HIT_IMMUNITY_TIME = 0.1,
+	MIN_HIT_INTERVAL = 0.01,
+
+	MOBILE_RANGE = 13,
+	CONSOLE_RANGE = 13,
+}
+
+BallConfig.Network = {
+	UPDATE_RATE = 45,
+	INTERPOLATION_DELAY = 0.1,
+}
+
+BallConfig.Debug = {
+	DeveloperIds = {
+		1547280148,
+		514974655,
+		7211594503
+	},
+}
+
+return BallConfig
