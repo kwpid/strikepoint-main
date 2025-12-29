@@ -74,19 +74,8 @@ end)
 
 UserInputService.JumpRequest:Connect(function()
 	if UserInputService:GetLastInputType() == Enum.UserInputType.Touch then
-		task.wait(0.05)
 		tryDoubleJump()
 	end
-end)
-local lastTouchTime = 0
-local touchDebounce = 0.3
-UserInputService.TouchMoved:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	local currentTime = tick()
-	if currentTime - lastTouchTime < touchDebounce then
-		tryDoubleJump()
-	end
-	lastTouchTime = currentTime
 end)
 
 doubleJumpEvent.OnClientEvent:Connect(function(otherPlayer)

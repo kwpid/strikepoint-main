@@ -36,7 +36,7 @@ BallConfig.Parry = {
 }
 
 BallConfig.Network = {
-	UPDATE_RATE = 45,
+	UPDATE_RATE = 60,
 	INTERPOLATION_DELAY = 0.1,
 }
 
