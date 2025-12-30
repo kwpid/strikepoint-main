@@ -108,7 +108,13 @@ local function updateAbilityButton()
 	if not char then return end
 
 	local abilityName = char:GetAttribute("EquippedAbility") or "Quad"
-	abilityBtn.Text = abilityName
+	local abilityData = AbilityManager.GetAbility(abilityName)
+
+	if abilityData and abilityData.Config and abilityData.Config.ImageId then
+		abilityBtn.Image = abilityData.Config.ImageId
+	else
+		warn("HotbarClient: No ImageId found for ability:", abilityName)
+	end
 end
 
 player.CharacterAdded:Connect(function(char)
