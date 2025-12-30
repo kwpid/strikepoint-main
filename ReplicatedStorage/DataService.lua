@@ -34,18 +34,22 @@ local statsUpdatedEvent = createRemote("RemoteEvent", "StatsUpdatedEvent")
 
 local sessionData = {}
 
+local AbilityManager = require(ReplicatedStorage.Abilities.AbilityManager)
+
 local SWORD_DEFINITIONS = {
 	["DefaultSword"] = {
 		Name = "DefaultSword",
 		RobloxId = 1133333333,
 		Value = 0,
 		Rarity = "Common",
+		Type = "Sword"
 	},
 	["Dark Scythe"] = {
 		Name = "Dark Scythe",
 		RobloxId = 1133333334,
 		Value = 1000,
 		Rarity = "Rare",
+		Type = "Sword"
 	}
 }
 
@@ -73,16 +77,31 @@ local function getXPForLevel(level)
 	return totalXP
 end
 
-local function getFullItemData(itemName)
-	local def = SWORD_DEFINITIONS[itemName]
-	if def then
-		return {
-			Name = def.Name,
-			RobloxId = def.RobloxId,
-			Value = def.Value,
-			Rarity = def.Rarity,
-			IsLocked = false,
-		}
+local function getFullItemData(itemName, itemType)
+	if itemType == "Ability" then
+		local ability = AbilityManager.GetAbility(itemName)
+		if ability then
+			return {
+				Name = ability.Config.Name,
+				RobloxId = ability.Config.ImageId, -- using ImageId as ID for now
+				Value = ability.Config.Price,
+				Rarity = "Common",
+				Type = "Ability",
+				IsLocked = false
+			}
+		end
+	else
+		local def = SWORD_DEFINITIONS[itemName]
+		if def then
+			return {
+				Name = def.Name,
+				RobloxId = def.RobloxId,
+				Value = def.Value,
+				Rarity = def.Rarity,
+				Type = "Sword",
+				IsLocked = false,
+			}
+		end
 	end
 	return nil
 end
@@ -99,11 +118,18 @@ local function loadData(player)
 	else
 		sessionData[userId] = {
 			Inventory = {},
-			Equipped = {}
+			Equipped = {}, -- Swords
+			EquippedAbility = "Quad" -- Default Ability
 		}
 	end
 
-	local STARTER_ITEMS = { "DefaultSword", "Dark Scythe" }
+	-- Ensure data structure integrity
+	if not sessionData[userId].EquippedAbility then
+		sessionData[userId].EquippedAbility = "Quad"
+	end
+
+	local STARTER_SWORDS = { "DefaultSword", "Dark Scythe" }
+	local STARTER_ABILITIES = { "Quad" }
 	local inventory = sessionData[userId].Inventory
 
 	local ownedItems = {}
@@ -111,12 +137,17 @@ local function loadData(player)
 		ownedItems[item.Name] = true
 	end
 
-	for _, itemName in ipairs(STARTER_ITEMS) do
+	for _, itemName in ipairs(STARTER_SWORDS) do
 		if not ownedItems[itemName] then
-			local itemData = getFullItemData(itemName)
-			if itemData then
-				table.insert(inventory, itemData)
-			end
+			local itemData = getFullItemData(itemName, "Sword")
+			if itemData then table.insert(inventory, itemData) end
+		end
+	end
+
+	for _, itemName in ipairs(STARTER_ABILITIES) do
+		if not ownedItems[itemName] then
+			local itemData = getFullItemData(itemName, "Ability")
+			if itemData then table.insert(inventory, itemData) end
 		end
 	end
 
@@ -170,7 +201,8 @@ local function saveData(player)
 		pcall(function()
 			InventoryDataStore:SetAsync(tostring(userId), {
 				Inventory = sessionData[userId].Inventory,
-				Equipped = sessionData[userId].Equipped
+				Equipped = sessionData[userId].Equipped,
+				EquippedAbility = sessionData[userId].EquippedAbility
 			})
 		end)
 
@@ -187,19 +219,21 @@ end
 
 getEquippedItemsFunction.OnServerInvoke = function(player)
 	local data = sessionData[player.UserId]
-
 	if not data then return {} end
 
 	local equippedNames = {}
+	-- Add Swords
 	for _, itemName in ipairs(data.Equipped) do
-		if SWORD_DEFINITIONS[itemName] then
-			table.insert(equippedNames, itemName)
-		end
+		table.insert(equippedNames, itemName)
+	end
+	-- Add Ability
+	if data.EquippedAbility then
+		table.insert(equippedNames, data.EquippedAbility)
 	end
 	return equippedNames
 end
 
-equipItemEvent.OnServerEvent:Connect(function(player, itemName, isUnequip)
+equipItemEvent.OnServerEvent:Connect(function(player, itemName, isUnequip, itemType)
 	local data = sessionData[player.UserId]
 	if not data then return end
 
@@ -213,28 +247,64 @@ equipItemEvent.OnServerEvent:Connect(function(player, itemName, isUnequip)
 
 	if not ownsItem then return end
 
-	if isUnequip then
-		local index = table.find(data.Equipped, itemName)
-		if index then
-			table.remove(data.Equipped, index)
+	if itemType == "Ability" then
+		if isUnequip then
+			-- Can't really unequip default ability, but logic for swapping:
+			if data.EquippedAbility == itemName then
+				data.EquippedAbility = "Quad" -- Revert to default
+			end
+		else
+			data.EquippedAbility = itemName
 		end
 
-		if #data.Equipped == 0 then
-			table.insert(data.Equipped, "DefaultSword")
+		if player.Character then
+			player.Character:SetAttribute("EquippedAbility", data.EquippedAbility)
 		end
-	else
-		data.Equipped = { itemName }
+	else 
+		-- Sword Logic
+		if isUnequip then
+			local index = table.find(data.Equipped, itemName)
+			if index then table.remove(data.Equipped, index) end
+			if #data.Equipped == 0 then table.insert(data.Equipped, "DefaultSword") end
+		else
+			data.Equipped = { itemName }
+		end
+
+		if player.Character then
+			local newSword = data.Equipped[1] or "None"
+			player.Character:SetAttribute("EquippedSword", newSword)
+		end
 	end
 
 	inventoryUpdatedEvent:FireClient(player)
+end)
 
+local function applyCharacterAttributes(player, char)
+	local data = sessionData[player.UserId]
+	if data then
+		local ability = data.EquippedAbility or "Quad"
+		char:SetAttribute("EquippedAbility", ability)
+
+		local sword = (data.Equipped and data.Equipped[1]) or "DefaultSword"
+		if sword ~= "None" then
+			char:SetAttribute("EquippedSword", sword)
+		end
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(char)
+		applyCharacterAttributes(player, char)
+	end)
+
+	loadData(player)
+
+	-- Apply again in case character spawned during load
 	if player.Character then
-		local newSword = data.Equipped[1] or "None"
-		player.Character:SetAttribute("EquippedSword", newSword)
+		applyCharacterAttributes(player, player.Character)
 	end
 end)
 
-Players.PlayerAdded:Connect(loadData)
 Players.PlayerRemoving:Connect(saveData)
 
 for _, player in ipairs(Players:GetPlayers()) do
@@ -246,6 +316,11 @@ local DataService = {}
 function DataService.GetEquippedSword(player)
 	local data = sessionData[player.UserId]
 	return data and data.Equipped[1] or "DefaultSword"
+end
+
+function DataService.GetEquippedAbility(player)
+	local data = sessionData[player.UserId]
+	return data and data.EquippedAbility or "Quad"
 end
 
 function DataService.AddWin(player)

@@ -8,21 +8,30 @@ local function setupMapsFolder()
 		mapsFolder.Name = "Maps"
 		mapsFolder.Parent = ReplicatedStorage
 	end
-
-
 	return mapsFolder
 end
 
 local function getAvailableMaps(mode)
 	local mapsFolder = setupMapsFolder()
-	local targetFolder = mapsFolder:FindFirstChild(mode)
+	local searchRoot = mapsFolder
+
+	if mode and mapsFolder:FindFirstChild(mode) then
+		searchRoot = mapsFolder[mode]
+	end
+
 	local maps = {}
 
-	for _, map in ipairs(targetFolder:GetChildren()) do
-		if map:IsA("Model") then
-			table.insert(maps, map)
+	local function collectMaps(folder)
+		for _, child in ipairs(folder:GetChildren()) do
+			if child:IsA("Model") then
+				table.insert(maps, child)
+			elseif child:IsA("Folder") then
+				collectMaps(child)
+			end
 		end
 	end
+
+	collectMaps(searchRoot)
 
 	return maps
 end
@@ -30,7 +39,7 @@ end
 local function selectRandomMap(mode)
 	local availableMaps = getAvailableMaps(mode)
 	if #availableMaps == 0 then
-		warn("MapManager: No maps found in ReplicatedStorage/Maps!")
+		warn("MapManager: No maps found in ReplicatedStorage/Maps" .. (mode and ("/" .. mode) or "") .. "!")
 		return nil
 	end
 
@@ -38,9 +47,19 @@ local function selectRandomMap(mode)
 	return availableMaps[randomIndex]
 end
 
+local function getMapMaxPlayers(map)
+	if not map then return 2 end
 
-function MapManager.createGameArena(gameId, offsetIndex, mapContainer, mode)
-	local selectedMap = selectRandomMap(mode)
+	local config = map:FindFirstChild("Config")
+	if config and config:IsA("IntValue") then
+		return config.Value
+	end
+
+	return 2
+end
+
+function MapManager.createGameArena(gameId, offsetIndex, mapContainer, mapType)
+	local selectedMap = selectRandomMap(mapType)
 
 	if not selectedMap then
 		warn("MapManager: Failed to select a map for game", gameId)
@@ -61,18 +80,27 @@ function MapManager.createGameArena(gameId, offsetIndex, mapContainer, mode)
 		Plate2 = arena:FindFirstChild("Plate2"),
 	}
 
-	if mode == "2v2" then
-		refs.T3 = arena:FindFirstChild("T3")
-		refs.T4 = arena:FindFirstChild("T4")
-		refs.Plate3 = arena:FindFirstChild("Plate3")
-		refs.Plate4 = arena:FindFirstChild("Plate4")
+	local bounds = arena:FindFirstChild("Bounds")
+	if bounds then
+		for _, child in ipairs(bounds:GetChildren()) do
+			if child.Name == "ZoneRed" and child:IsA("BasePart") then
+				child.CollisionGroup = "ZoneRed"
+				print("MapManager: Set ZoneRed collision for", child:GetFullName())
+			elseif child.Name == "ZoneBlue" and child:IsA("BasePart") then
+				child.CollisionGroup = "ZoneBlue"
+				print("MapManager: Set ZoneBlue collision for", child:GetFullName())
+			end
+		end
+	else
+		warn("MapManager: No 'Bounds' model found in map", arena.Name)
 	end
 
-	if refs.Plate then refs.Board1 = arena:FindFirstChild("Board1") end
-	if refs.Plate2 then refs.Board2 = arena:FindFirstChild("Board2") end
-	if refs.Plate3 then refs.Board3 = arena:FindFirstChild("Board3") end
-	if refs.Plate4 then refs.Board4 = arena:FindFirstChild("Board4") end
-
+	if refs.Plate1 then
+		refs.Board1 = refs.Plate1:FindFirstChild("Board")
+	end
+	if refs.Plate2 then
+		refs.Board2 = refs.Plate2:FindFirstChild("Board")
+	end
 	if not refs.BallSpawn or not refs.T1 or not refs.T2 then
 		warn("MapManager: Selected map missing critical parts! Ensure map has BallSpawn, T1, and T2.")
 		arena:Destroy()
@@ -82,13 +110,14 @@ function MapManager.createGameArena(gameId, offsetIndex, mapContainer, mode)
 	return arena, refs
 end
 
-function MapManager.validateMap(map, mode)
-	local required = {"BallSpawn", "T1", "T2"}
+function MapManager.getMapPlayerCount()
+	local selectedMap = selectRandomMap()
+	if not selectedMap then return 2 end
+	return getMapMaxPlayers(selectedMap)
+end
 
-	if mode == "2v2" then
-		table.insert(required, "T3")
-		table.insert(required, "T4")
-	end
+function MapManager.validateMap(map)
+	local required = {"BallSpawn", "T1", "T2"}
 
 	for _, partName in ipairs(required) do
 		if not map:FindFirstChild(partName) then
@@ -97,6 +126,20 @@ function MapManager.validateMap(map, mode)
 	end
 
 	return true
+end
+
+function MapManager.listMaps()
+	local maps = getAvailableMaps()
+	local mapInfo = {}
+
+	for _, map in ipairs(maps) do
+		table.insert(mapInfo, {
+			Name = map.Name,
+			MaxPlayers = getMapMaxPlayers(map)
+		})
+	end
+
+	return mapInfo
 end
 
 return MapManager

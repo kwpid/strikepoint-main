@@ -24,19 +24,27 @@ BallConfig.Physics = {
 }
 
 BallConfig.Parry = {
-	RANGE = 11,
+	RANGE = 14,
 	COOLDOWN = 0.1,
 	TIMEOUT = 5,
 	MIN_PARRY_TIME = 0.05,
 	HIT_IMMUNITY_TIME = 0.1,
 	MIN_HIT_INTERVAL = 0.01,
+	PARRY_MISS_COOLDOWN = 0.5,
 
-	MOBILE_RANGE = 13,
-	CONSOLE_RANGE = 13,
+	MOBILE_RANGE = 15,
+	CONSOLE_RANGE = 15,
+}
+
+BallConfig.Dash = {
+	COOLDOWN = 3,
+	POWER = 150,
+	DURATION = 0.15,
+	HOMING_ANGLE = 45,
 }
 
 BallConfig.Network = {
-	UPDATE_RATE = 60,
+	UPDATE_RATE = 45,
 	INTERPOLATION_DELAY = 0.1,
 }
 

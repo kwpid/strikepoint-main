@@ -26,6 +26,13 @@ if not ServerEvents.ballHit then
 	ServerEvents.ballHit.Parent = RemoteEventsFolder
 end
 
+ServerEvents.parryCooldown = RemoteEventsFolder:FindFirstChild("ParryCooldownEvent")
+if not ServerEvents.parryCooldown then
+	ServerEvents.parryCooldown = Instance.new("RemoteEvent")
+	ServerEvents.parryCooldown.Name = "ParryCooldownEvent"
+	ServerEvents.parryCooldown.Parent = RemoteEventsFolder
+end
+
 local playerData = {}
 local ballHitImmunity = {}
 
@@ -153,21 +160,13 @@ local function createParryWindow(player, character, animator, animations, weld, 
 			return 
 		end
 
-		if isBallInHitImmunity(player.UserId) then
-			return
-		end
-
-		local timeSinceStart = tick() - parryWindow.startTime
-		if timeSinceStart < Config.Parry.MIN_PARRY_TIME then
-			return
-		end
-
 		local distance = (hrp.Position - ball.Position).Magnitude
 		local velocity = ball:GetAttribute("Velocity") or Vector3.zero
 		local predictedPosition = ball.Position + (velocity * 0.1)
 		local predictedDistance = (hrp.Position - predictedPosition).Magnitude
 
 		if distance <= parryWindow.parryRange or predictedDistance <= parryWindow.parryRange then
+			print("SwordServer: Hit detected! Distance:", distance, "GameId:", myGameId)
 			parryWindow.hitBall = true
 			parryWindow.active = false
 			disableTrail()
@@ -186,6 +185,7 @@ local function createParryWindow(player, character, animator, animations, weld, 
 			task.wait(0.05)
 			ServerEvents.ballHit:Fire(player, parryWindow.cameraDirection)
 
+
 			parryTrack.Stopped:Connect(function()
 				weld.Part0 = attachments.torso
 				weld.C0 = attachments.torsoAttachment.CFrame
@@ -202,6 +202,20 @@ local function createParryWindow(player, character, animator, animations, weld, 
 			parryWindow.active = false
 			disableTrail()
 			playerData[player.UserId].cooldown = false
+			-- If animation stopped and we didn't hit, is it a miss? 
+			-- Typically yes, the swing finished.
+			ServerEvents.parryCooldown:FireClient(player, Config.Parry.PARRY_MISS_COOLDOWN)
+			-- Also need to apply server side cooldown if we want to enforce it logic-wise
+			-- But user asked for "goes on cooldown", implying visual and functional.
+			-- playerData.cooldown handles functional. We set it to false here?
+			-- If we want a penalty, we should keep it true for 0.5s?
+			-- "if a player misses a parry, theyre parry goes on cooldown for .5 seconds."
+			-- So we should NOT set cooldown = false immediately.
+
+			playerData[player.UserId].cooldown = true
+			task.delay(Config.Parry.PARRY_MISS_COOLDOWN, function()
+				playerData[player.UserId].cooldown = false
+			end)
 		end
 	end)
 
@@ -210,7 +224,12 @@ local function createParryWindow(player, character, animator, animations, weld, 
 			parryWindow.active = false
 			disableTrail()
 			failTrack:Stop()
-			playerData[player.UserId].cooldown = false
+			-- Timeout miss
+			ServerEvents.parryCooldown:FireClient(player, Config.Parry.PARRY_MISS_COOLDOWN)
+			playerData[player.UserId].cooldown = true
+			task.delay(Config.Parry.PARRY_MISS_COOLDOWN, function()
+				playerData[player.UserId].cooldown = false
+			end)
 		end
 	end)
 

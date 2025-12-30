@@ -11,10 +11,35 @@ local rootPart = character:WaitForChild("HumanoidRootPart")
 
 local Config = require(ReplicatedStorage:WaitForChild("BallConfig"))
 local RemoteEventsFolder = ReplicatedStorage:WaitForChild(Config.Paths.REMOTE_EVENTS_FOLDER)
+local AbilityManager = require(ReplicatedStorage.Abilities.AbilityManager)
 local doubleJumpEvent = RemoteEventsFolder:WaitForChild("DoubleJumpEvent")
 local jumpEffectTemplate = ReplicatedStorage:WaitForChild("JumpEffect")
 
+-- State variables
 local hasDoubleJumped = false
+local jumpCount = 0
+local maxJumps = 2
+local lastJumpTime = 0
+local TIME_BETWEEN_JUMPS = 0.2 
+
+-- Update Max Jumps based on attribute
+local function updateAbilities()
+	local abilityName = character:GetAttribute("EquippedAbility")
+	if abilityName then
+		local ability = AbilityManager.GetAbility(abilityName)
+		if ability and ability.Config.MaxJumps then
+			maxJumps = ability.Config.MaxJumps
+		else
+			maxJumps = 2
+		end
+	else
+		maxJumps = 2
+	end
+	print("JumpClient: efficient jumps set to", maxJumps)
+end
+
+character:GetAttributeChangedSignal("EquippedAbility"):Connect(updateAbilities)
+updateAbilities() 
 
 local function playDoubleJumpEffect(targetCFrame)
 	local effectPart = jumpEffectTemplate:Clone()
@@ -41,41 +66,36 @@ local function playDoubleJumpEffect(targetCFrame)
 end
 
 humanoid.StateChanged:Connect(function(oldState, newState)
-	if newState == Enum.HumanoidStateType.Landed then
+	if newState == Enum.HumanoidStateType.Landed or newState == Enum.HumanoidStateType.Running then
 		hasDoubleJumped = false
+		jumpCount = 0
+	elseif newState == Enum.HumanoidStateType.Jumping then
+		lastJumpTime = tick()
+		jumpCount = jumpCount + 1
 	end
 end)
 
-local function tryDoubleJump()
+local function attemptDoubleJump()
+	if character:GetAttribute("FeaturesLocked") then return end
+
 	local state = humanoid:GetState()
-	local inAir = (state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping)
+	local isAirborne = (state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping)
 
-	if inAir and not hasDoubleJumped then
-		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-		hasDoubleJumped = true
+	if not isAirborne then return end
+	if jumpCount >= maxJumps then return end
 
-		playDoubleJumpEffect(rootPart.CFrame)
-		doubleJumpEvent:FireServer()
+	if (tick() - lastJumpTime) < TIME_BETWEEN_JUMPS then 
+		return 
 	end
+
+	humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+
+	playDoubleJumpEffect(rootPart.CFrame)
+	doubleJumpEvent:FireServer()
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then
-		return
-	end
-
-	if
-		input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.Space
-		or input.UserInputType == Enum.UserInputType.Gamepad1 and input.KeyCode == Enum.KeyCode.ButtonA
-	then
-		tryDoubleJump()
-	end
-end)
-
 UserInputService.JumpRequest:Connect(function()
-	if UserInputService:GetLastInputType() == Enum.UserInputType.Touch then
-		tryDoubleJump()
-	end
+	attemptDoubleJump()
 end)
 
 doubleJumpEvent.OnClientEvent:Connect(function(otherPlayer)

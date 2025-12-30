@@ -38,14 +38,21 @@ local clientState = BallPhysics.new(Vector3.zero)
 local serverState = BallPhysics.new(Vector3.zero)
 
 ClearClientBallEvent.OnClientEvent:Connect(function(gameId)
-	if clientBall and clientBall:GetAttribute("GameId") == gameId then
-		clientBall:Destroy()
-		clientBall = nil
+	print("BallClient: Cleanup requested for GameId:", gameId)
+
+	if clientBall then
+		if clientBall:GetAttribute("GameId") == gameId then
+			print("BallClient: Destroying tracked clientBall")
+			clientBall:Destroy()
+			clientBall = nil
+		end
 	end
+
 	currentBall = nil
 
 	for _, obj in ipairs(workspace:GetDescendants()) do
 		if obj.Name == "ClientBall" and obj:GetAttribute("PlayerId") == player.UserId and obj:GetAttribute("GameId") == gameId then
+			print("BallClient: Destroying lingering ClientBall:", obj:GetFullName())
 			obj:Destroy()
 		end
 	end
@@ -135,7 +142,7 @@ local function checkCollision(from, to)
 	if distance < 0.001 then return nil end
 	local ballSize = clientBall and clientBall.Size.X or 4
 	local rayResult = workspace:Raycast(from, direction.Unit * (distance + ballSize / 2), raycastParams)
-	
+
 	if rayResult and clientBall then
 		local hitName = rayResult.Instance.Name:lower()
 		if hitName:find("goaldetector") then
