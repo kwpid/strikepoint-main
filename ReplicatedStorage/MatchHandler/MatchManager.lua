@@ -445,6 +445,32 @@ function MatchManager.Init()
 			if hitPlayer then
 				DataService.AddGoal(hitPlayer)
 				DataService.AddXP(hitPlayer, CONFIG.XP_REWARDS.GOAL)
+
+				-- goal Explosion Logic
+				local equippedGoal = DataService.GetEquippedGoal(hitPlayer)
+				local goalAsset = ReplicatedStorage.AssetManager.Goals:FindFirstChild(equippedGoal)
+
+				if goalAsset then
+					local targetGoal = nil
+					if team == "red" then
+						targetGoal = gameInst.Arena.Goals.Blue
+					elseif team == "blue" then
+						targetGoal = gameInst.Arena.Goals.Red
+					end
+
+					if targetGoal and targetGoal:FindFirstChild("VFX") then
+						local explosion = goalAsset:Clone()
+						explosion.Parent = targetGoal.VFX
+						if explosion:IsA("BasePart") then
+							explosion.CFrame = targetGoal.VFX.CFrame
+						elseif explosion:IsA("Attachment") then
+							explosion.Parent = targetGoal.VFX
+							explosion.Position = Vector3.new(0,0,0) 
+						end
+						local Debris = game:GetService("Debris")
+						Debris:AddItem(explosion, 4)
+					end
+				end
 			end
 
 			if gameInst.IsOvertime then

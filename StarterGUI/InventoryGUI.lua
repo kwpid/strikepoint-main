@@ -50,23 +50,25 @@ local function formatNumber(n)
 end
 
 
-local currentTab = "Swords" -- "Swords" or "Abilities"
+local currentTab = "Swords"
 
--- Tab Elements (Assumed to be created or I will create them logically if missing)
--- For now, let's assume the GUI structure is getting updated or we inject buttons.
--- User mentioned "Inventory.Tabs is a frame, with Swords and Abilities buttons"
 
 local tabsFrame = popout.Parent:FindFirstChild("Tabs") or gui:FindFirstChild("Tabs")
 if not tabsFrame then
-	-- Create logic to support tabs if missing, or just warn. 
-	-- Assuming user said they updated it, let's try to find them.
 	tabsFrame = popout.Parent:FindFirstChild("Tabs")
 end
 
 local btnTabSwords = tabsFrame and tabsFrame:FindFirstChild("Swords")
 local btnTabAbilities = tabsFrame and tabsFrame:FindFirstChild("Abilities")
+local btnTabGoals = tabsFrame and tabsFrame:FindFirstChild("Goals")
 
+if not btnTabGoals and btnTabSwords then
+	btnTabGoals = btnTabSwords:Clone()
+	btnTabGoals.Name = "Goals"
+	btnTabGoals.Text = "Goals" 
+	btnTabGoals.Parent = tabsFrame
 
+end
 
 
 local function updatePopout()
@@ -97,18 +99,11 @@ local function updatePopout()
 	if btnEquip then
 		local isEquipped = false
 		if selectedItem.Type == "Ability" then
-			-- Logic for checking if Ability is equipped
-			-- We don't have the equipped ability in 'equippedItems' map yet because it's set up for swords
-			-- Let's fetch equipped items again or assume logic needed in refreshInventory
+		elseif selectedItem.Type == "Goal" then
+			isEquipped = equippedItems[selectedItem.Name]
 		else
 			isEquipped = equippedItems[selectedItem.Name]
 		end
-
-		-- Quick refresh of equipped status from the last fetch
-		-- We need to know if THIS item is equipped.
-		-- 'equippedItems' is a set for swords, but we need to track ability too.
-
-		-- Let's rely on refreshInventory to populate a comprehensive 'equippedSet'
 		isEquipped = equippedItems[selectedItem.Name]
 
 		if isEquipped then
@@ -143,19 +138,26 @@ local function refreshInventory()
 		end
 	end
 
-	-- Filter items based on Tab
 	local filteredItems = {}
 	for _, item in ipairs(currentInventory) do
-		-- Determine Item Type if not explicitly set (Legacy compatibility)
 		local iType = item.Type or "Sword" 
 
-		-- Tab Filtering
 		if currentTab == "Swords" and iType == "Sword" then
 			table.insert(filteredItems, item)
 		elseif currentTab == "Abilities" and iType == "Ability" then
 			table.insert(filteredItems, item)
+		elseif currentTab == "Goals" and iType == "Goal" then
+			table.insert(filteredItems, item)
 		end
 	end
+
+	local RARITY_COLORS = {
+		Common = Color3.fromRGB(255, 255, 255),
+		Uncommon = Color3.fromRGB(144, 238, 144),
+		Rare = Color3.fromRGB(80, 80, 255),
+		["Ultra Rare"] = Color3.fromRGB(128, 0, 128),
+		Legendary = Color3.fromRGB(255, 165, 0)
+	}
 
 	for i, item in ipairs(filteredItems) do
 		local clone = sample:Clone()
@@ -163,13 +165,62 @@ local function refreshInventory()
 		clone.LayoutOrder = i
 		clone.Parent = handler
 		clone.Visible = true
-
+		local rarity = item.Rarity or "Common"
+		local color = RARITY_COLORS[rarity] or RARITY_COLORS.Common
+		local uiStroke = clone:FindFirstChild("UIStroke")
+		if uiStroke then
+			uiStroke.Color = color
+		end
 		if clone:IsA("ImageButton") then
+			clone.ImageColor3 = color
+		elseif clone:IsA("Frame") then
+			clone.BackgroundColor3 = color
+		end
+
+		local itemImage = clone:FindFirstChild("ItemImage")
+		local itemViewport = clone:FindFirstChild("ItemImage_Sword")
+
+		if (not item.Type or item.Type == "Sword") and itemViewport then
+			if itemImage then itemImage.Visible = false end
+			itemViewport.Visible = true
+
+			local AssetManager = ReplicatedStorage:FindFirstChild("AssetManager")
+			local swordFolder = AssetManager and AssetManager:FindFirstChild("Swords")
+			local swordModel = swordFolder and swordFolder:FindFirstChild(item.Name)
+
+			if swordModel then
+				local vModel = swordModel:Clone()
+				local slashVFX = vModel:FindFirstChild("SlashVFX")
+				if slashVFX then slashVFX:Destroy() end
+				vModel.Parent = itemViewport
+				local cam = Instance.new("Camera")
+				cam.Parent = itemViewport
+				itemViewport.CurrentCamera = cam
+				local vpc = vModel:FindFirstChild("VPC")
+				if vpc then
+					cam.CFrame = vpc.CFrame
+					vpc.Transparency = 1
+				else
+					local handle = vModel:FindFirstChild("Handle") or vModel.PrimaryPart or vModel:GetChildren()[1]
+					if handle then
+						local center = handle.Position
+						local offset = Vector3.new(3, 2, 4)
+						cam.CFrame = CFrame.new(center + offset, center)
+					else
+						local cf, size = vModel:GetBoundingBox()
+						cam.CFrame = CFrame.new(cf.Position + Vector3.new(size.X + 2, size.Y + 1, size.Z + 4), cf.Position)
+					end
+				end
+			end
+		elseif itemImage and itemImage:IsA("ImageLabel") then
+			if itemViewport then itemViewport.Visible = false end
+			itemImage.Visible = true
+
 			local rbxId = item.RobloxId or 0
 			if type(rbxId) == "string" and (string.find(rbxId, "rbxassetid") or string.find(rbxId, "http")) then
-				clone.Image = rbxId
+				itemImage.Image = rbxId
 			else
-				clone.Image = "rbxthumb://type=Asset&id=" .. rbxId .. "&w=150&h=150"
+				itemImage.Image = "rbxthumb://type=Asset&id=" .. rbxId .. "&w=150&h=150"
 			end
 		end
 
@@ -186,7 +237,6 @@ local function refreshInventory()
 	end
 
 	if selectedItem then
-		-- Check if selected item is still valid for current tab
 		local isValid = false
 		for _, item in ipairs(filteredItems) do
 			if item.Name == selectedItem.Name then isValid = true break end
@@ -216,14 +266,9 @@ if btnEquip then
 			if btnEquip then btnEquip.Text = "Equip" end
 		else
 			equipItemEvent:FireServer(itemName, false, itemType)
-
-			-- Client side prediction for UI update
 			if itemType == "Ability" then
-				-- Can only equip one ability type
-				-- Clear other abilities from equipped set?
-				-- For now, refreshInventory handles the source of truth
 			else
-				equippedItems = {} -- Single sword equip logic
+				equippedItems = {} 
 			end
 			equippedItems[itemName] = true
 			if btnEquip then btnEquip.Text = "Unequip" end
@@ -258,6 +303,13 @@ end
 if btnTabAbilities then
 	btnTabAbilities.MouseButton1Click:Connect(function()
 		currentTab = "Abilities"
+		refreshInventory()
+	end)
+end
+
+if btnTabGoals then
+	btnTabGoals.MouseButton1Click:Connect(function()
+		currentTab = "Goals"
 		refreshInventory()
 	end)
 end

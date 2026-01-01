@@ -6,10 +6,11 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local mainUI = playerGui:WaitForChild("MainUI")
-local hotbar = mainUI:WaitForChild("Hotbar") 
+local hotbar = script.Parent
+
 
 local Config = require(ReplicatedStorage:WaitForChild("BallConfig"))
-local AbilityManager = require(ReplicatedStorage.Abilities.AbilityManager)
+local AbilityManager = require(ReplicatedStorage.AssetManager.Abilities.AbilityManager)
 local RemoteEventsFolder = ReplicatedStorage:WaitForChild(Config.Paths.REMOTE_EVENTS_FOLDER)
 
 local swingEvent = RemoteEventsFolder:WaitForChild("SwingEvent")
@@ -27,7 +28,6 @@ local dashBtn = hotbar:WaitForChild("Dash")
 
 print("HotbarClient: UI Loaded via", hotbar:GetFullName())
 
--- State
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
 
@@ -51,7 +51,6 @@ end
 
 setupButton(abilityBtn, onAbility)
 
--- Dash Logic
 local function onDash()
 	local char = player.Character
 	if char then

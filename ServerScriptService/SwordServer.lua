@@ -1,11 +1,13 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
 local Vector3 = Vector3
 
 local Config = require(ReplicatedStorage.BallConfig)
 
-local SWORD_FOLDER = ReplicatedStorage:WaitForChild("Swords")
+local SWORD_FOLDER = ReplicatedStorage:WaitForChild("AssetManager"):WaitForChild("Swords")
 local DEFAULT_SWORD_NAME = "DefaultSword"
 local DUMMY = workspace:WaitForChild("Dummy")
 local DUMMY_TORSO_ATTACHMENT = DUMMY:WaitForChild("Torso"):WaitForChild("SwordAttachment")
@@ -92,6 +94,66 @@ local function setBallHitImmunity(userId)
 	ballHitImmunity[userId] = tick()
 end
 
+
+local function createDefaultSlashEffect(slashMesh, handlePosition, cameraDirection, ballPosition, playerPosition)
+	if not slashMesh then 
+		warn("No slash mesh provided")
+		return 
+	end
+
+	local slash = slashMesh:Clone()
+
+	local midpoint = (handlePosition + ballPosition) / 2
+	slash.Position = midpoint
+	local lookCFrame = CFrame.lookAt(slash.Position, slash.Position + cameraDirection)
+	slash.CFrame = lookCFrame * CFrame.Angles(0, math.rad(100), 0)
+	slash.CanCollide = false
+	slash.Anchored = true
+	local originalTransparency = slash.Transparency
+	slash.Transparency = 1
+	slash.Parent = workspace
+	local fadeInInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local fadeInTween = TweenService:Create(slash, fadeInInfo, {Transparency = originalTransparency})
+	fadeInTween:Play()
+	task.delay(0.1, function()
+		local fadeOutInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		local fadeOutTween = TweenService:Create(slash, fadeOutInfo, {Transparency = 1})
+		fadeOutTween:Play()
+		fadeOutTween.Completed:Connect(function()
+			slash:Destroy()
+		end)
+	end)
+
+	Debris:AddItem(slash, 1)
+end
+
+local function createSlashEffect(swordModel, handlePosition, cameraDirection, ballPosition, playerPosition)
+	if not swordModel then return end
+	local slashModule = swordModel:FindFirstChild("SlashModule")
+	if slashModule and slashModule:IsA("ModuleScript") then
+		local success, customSlash = pcall(require, slashModule)
+		if success and customSlash and typeof(customSlash.CreateSlash) == "function" then
+			customSlash.CreateSlash(swordModel, handlePosition, cameraDirection, ballPosition, playerPosition)
+			return
+		else
+			warn("SlashModule found but invalid or missing CreateSlash function for sword: " .. swordModel.Name)
+		end
+	end
+
+	local slashVFXFolder = swordModel:FindFirstChild("SlashVFX")
+	if not slashVFXFolder then 
+		warn("No SlashVFX folder found in sword: " .. swordModel.Name)
+		return 
+	end
+
+	local slashMesh = slashVFXFolder:FindFirstChildOfClass("MeshPart") or slashVFXFolder:FindFirstChild("DefaultSlash")
+	if slashMesh then
+		createDefaultSlashEffect(slashMesh, handlePosition, cameraDirection, ballPosition, playerPosition)
+	else
+		warn("No slash mesh found in SlashVFX folder for sword: " .. swordModel.Name)
+	end
+end
+
 local function createParryWindow(player, character, animator, animations, weld, attachments, cameraDirection, handle)
 	local data = playerData[player.UserId]
 	local parryRange = Config.Parry.RANGE
@@ -118,6 +180,40 @@ local function createParryWindow(player, character, animator, animations, weld, 
 		end
 	end
 
+	-- PARRY VFX LOGIC
+	local parryVFX = nil
+	local AssetManager = ReplicatedStorage:FindFirstChild("AssetManager")
+	local vfxTemplate = AssetManager and AssetManager:FindFirstChild("ParryVFX")
+
+	if vfxTemplate then
+		parryVFX = vfxTemplate:Clone()
+		local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+		if root then
+			parryVFX.Parent = root
+			for _, emitter in ipairs(parryVFX:GetChildren()) do
+				if emitter:IsA("ParticleEmitter") then
+					emitter:Emit(1)
+					emitter.Enabled = true
+				end
+			end
+		else
+			parryVFX:Destroy()
+			parryVFX = nil
+		end
+	end
+
+	local function cleanupParryVFX()
+		if parryVFX then
+			for _, child in ipairs(parryVFX:GetChildren()) do
+				if child:IsA("ParticleEmitter") then
+					child.Enabled = false
+				end
+			end
+			Debris:AddItem(parryVFX, 2) 
+			parryVFX = nil
+		end
+	end
+
 	local parryWindow = {
 		active = true,
 		hitBall = false,
@@ -134,6 +230,7 @@ local function createParryWindow(player, character, animator, animations, weld, 
 		if not parryWindow.active then
 			parryWindow.connection:Disconnect()
 			disableTrail()
+			cleanupParryVFX()
 			return
 		end
 
@@ -157,6 +254,7 @@ local function createParryWindow(player, character, animator, animations, weld, 
 		if not hrp then 
 			parryWindow.active = false
 			disableTrail()
+			cleanupParryVFX()
 			return 
 		end
 
@@ -170,6 +268,7 @@ local function createParryWindow(player, character, animator, animations, weld, 
 			parryWindow.hitBall = true
 			parryWindow.active = false
 			disableTrail()
+			cleanupParryVFX()
 
 			setBallHitImmunity(player.UserId)
 
@@ -181,6 +280,8 @@ local function createParryWindow(player, character, animator, animations, weld, 
 
 			local parryTrack = animator:LoadAnimation(animations.parry)
 			parryTrack:Play()
+			local swordModel = character:FindFirstChild("HipSword")
+			createSlashEffect(swordModel, handle.Position, parryWindow.cameraDirection, ball.Position, hrp.Position)
 
 			task.wait(0.05)
 			ServerEvents.ballHit:Fire(player, parryWindow.cameraDirection)
@@ -201,17 +302,9 @@ local function createParryWindow(player, character, animator, animations, weld, 
 		if parryWindow.active then
 			parryWindow.active = false
 			disableTrail()
+			cleanupParryVFX()
 			playerData[player.UserId].cooldown = false
-			-- If animation stopped and we didn't hit, is it a miss? 
-			-- Typically yes, the swing finished.
 			ServerEvents.parryCooldown:FireClient(player, Config.Parry.PARRY_MISS_COOLDOWN)
-			-- Also need to apply server side cooldown if we want to enforce it logic-wise
-			-- But user asked for "goes on cooldown", implying visual and functional.
-			-- playerData.cooldown handles functional. We set it to false here?
-			-- If we want a penalty, we should keep it true for 0.5s?
-			-- "if a player misses a parry, theyre parry goes on cooldown for .5 seconds."
-			-- So we should NOT set cooldown = false immediately.
-
 			playerData[player.UserId].cooldown = true
 			task.delay(Config.Parry.PARRY_MISS_COOLDOWN, function()
 				playerData[player.UserId].cooldown = false
@@ -223,8 +316,8 @@ local function createParryWindow(player, character, animator, animations, weld, 
 		if parryWindow.active then
 			parryWindow.active = false
 			disableTrail()
+			cleanupParryVFX()
 			failTrack:Stop()
-			-- Timeout miss
 			ServerEvents.parryCooldown:FireClient(player, Config.Parry.PARRY_MISS_COOLDOWN)
 			playerData[player.UserId].cooldown = true
 			task.delay(Config.Parry.PARRY_MISS_COOLDOWN, function()

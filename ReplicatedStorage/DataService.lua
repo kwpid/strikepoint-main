@@ -34,24 +34,9 @@ local statsUpdatedEvent = createRemote("RemoteEvent", "StatsUpdatedEvent")
 
 local sessionData = {}
 
-local AbilityManager = require(ReplicatedStorage.Abilities.AbilityManager)
-
-local SWORD_DEFINITIONS = {
-	["DefaultSword"] = {
-		Name = "DefaultSword",
-		RobloxId = 1133333333,
-		Value = 0,
-		Rarity = "Common",
-		Type = "Sword"
-	},
-	["Dark Scythe"] = {
-		Name = "Dark Scythe",
-		RobloxId = 1133333334,
-		Value = 1000,
-		Rarity = "Rare",
-		Type = "Sword"
-	}
-}
+local AbilityManager = require(ReplicatedStorage.AssetManager.Abilities.AbilityManager)
+local GoalManager = require(ReplicatedStorage.AssetManager.Goals.GoalManager)
+local SwordManager = require(ReplicatedStorage.AssetManager.Swords.SwordManager)
 
 local function calculateLevelFromXP(xp)
 	local level = 1
@@ -83,20 +68,32 @@ local function getFullItemData(itemName, itemType)
 		if ability then
 			return {
 				Name = ability.Config.Name,
-				RobloxId = ability.Config.ImageId, -- using ImageId as ID for now
+				RobloxId = ability.Config.ImageId,
 				Value = ability.Config.Price,
 				Rarity = "Common",
 				Type = "Ability",
 				IsLocked = false
 			}
 		end
+	elseif itemType == "Goal" then
+		local goal = GoalManager.GetGoal(itemName)
+		if goal then
+			return {
+				Name = goal.Name,
+				RobloxId = goal.ImageId,
+				Value = goal.Price,
+				Rarity = goal.Rarity,
+				Type = "Goal",
+				IsLocked = false
+			}
+		end
 	else
-		local def = SWORD_DEFINITIONS[itemName]
+		local def = SwordManager.GetSword(itemName)
 		if def then
 			return {
 				Name = def.Name,
-				RobloxId = def.RobloxId,
-				Value = def.Value,
+				RobloxId = def.ImageId,
+				Value = def.Price,
 				Rarity = def.Rarity,
 				Type = "Sword",
 				IsLocked = false,
@@ -119,13 +116,16 @@ local function loadData(player)
 		sessionData[userId] = {
 			Inventory = {},
 			Equipped = {}, -- Swords
-			EquippedAbility = "Quad" -- Default Ability
+			EquippedAbility = "Quad",
+			EquippedGoal = "Default"
 		}
 	end
 
-	-- Ensure data structure integrity
 	if not sessionData[userId].EquippedAbility then
 		sessionData[userId].EquippedAbility = "Quad"
+	end
+	if not sessionData[userId].EquippedGoal then
+		sessionData[userId].EquippedGoal = "Default"
 	end
 
 	local STARTER_SWORDS = { "DefaultSword", "Dark Scythe" }
@@ -147,6 +147,14 @@ local function loadData(player)
 	for _, itemName in ipairs(STARTER_ABILITIES) do
 		if not ownedItems[itemName] then
 			local itemData = getFullItemData(itemName, "Ability")
+			if itemData then table.insert(inventory, itemData) end
+		end
+	end
+
+	local STARTER_GOALS = { "Default" }
+	for _, itemName in ipairs(STARTER_GOALS) do
+		if not ownedItems[itemName] then
+			local itemData = getFullItemData(itemName, "Goal")
 			if itemData then table.insert(inventory, itemData) end
 		end
 	end
@@ -202,7 +210,8 @@ local function saveData(player)
 			InventoryDataStore:SetAsync(tostring(userId), {
 				Inventory = sessionData[userId].Inventory,
 				Equipped = sessionData[userId].Equipped,
-				EquippedAbility = sessionData[userId].EquippedAbility
+				EquippedAbility = sessionData[userId].EquippedAbility,
+				EquippedGoal = sessionData[userId].EquippedGoal
 			})
 		end)
 
@@ -222,13 +231,14 @@ getEquippedItemsFunction.OnServerInvoke = function(player)
 	if not data then return {} end
 
 	local equippedNames = {}
-	-- Add Swords
 	for _, itemName in ipairs(data.Equipped) do
 		table.insert(equippedNames, itemName)
 	end
-	-- Add Ability
 	if data.EquippedAbility then
 		table.insert(equippedNames, data.EquippedAbility)
+	end
+	if data.EquippedGoal then
+		table.insert(equippedNames, data.EquippedGoal)
 	end
 	return equippedNames
 end
@@ -249,9 +259,8 @@ equipItemEvent.OnServerEvent:Connect(function(player, itemName, isUnequip, itemT
 
 	if itemType == "Ability" then
 		if isUnequip then
-			-- Can't really unequip default ability, but logic for swapping:
 			if data.EquippedAbility == itemName then
-				data.EquippedAbility = "Quad" -- Revert to default
+				data.EquippedAbility = "Quad" 
 			end
 		else
 			data.EquippedAbility = itemName
@@ -260,8 +269,15 @@ equipItemEvent.OnServerEvent:Connect(function(player, itemName, isUnequip, itemT
 		if player.Character then
 			player.Character:SetAttribute("EquippedAbility", data.EquippedAbility)
 		end
+	elseif itemType == "Goal" then
+		if isUnequip then
+			if data.EquippedGoal == itemName then
+				data.EquippedGoal = "Default"
+			end
+		else
+			data.EquippedGoal = itemName
+		end
 	else 
-		-- Sword Logic
 		if isUnequip then
 			local index = table.find(data.Equipped, itemName)
 			if index then table.remove(data.Equipped, index) end
@@ -299,7 +315,6 @@ Players.PlayerAdded:Connect(function(player)
 
 	loadData(player)
 
-	-- Apply again in case character spawned during load
 	if player.Character then
 		applyCharacterAttributes(player, player.Character)
 	end
@@ -321,6 +336,11 @@ end
 function DataService.GetEquippedAbility(player)
 	local data = sessionData[player.UserId]
 	return data and data.EquippedAbility or "Quad"
+end
+
+function DataService.GetEquippedGoal(player)
+	local data = sessionData[player.UserId]
+	return data and data.EquippedGoal or "Default"
 end
 
 function DataService.AddWin(player)

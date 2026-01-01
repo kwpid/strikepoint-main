@@ -11,18 +11,16 @@ local rootPart = character:WaitForChild("HumanoidRootPart")
 
 local Config = require(ReplicatedStorage:WaitForChild("BallConfig"))
 local RemoteEventsFolder = ReplicatedStorage:WaitForChild(Config.Paths.REMOTE_EVENTS_FOLDER)
-local AbilityManager = require(ReplicatedStorage.Abilities.AbilityManager)
+local AbilityManager = require(ReplicatedStorage.AssetManager.Abilities.AbilityManager)
 local doubleJumpEvent = RemoteEventsFolder:WaitForChild("DoubleJumpEvent")
 local jumpEffectTemplate = ReplicatedStorage:WaitForChild("JumpEffect")
 
--- State variables
 local hasDoubleJumped = false
 local jumpCount = 0
 local maxJumps = 2
 local lastJumpTime = 0
 local TIME_BETWEEN_JUMPS = 0.2 
 
--- Update Max Jumps based on attribute
 local function updateAbilities()
 	local abilityName = character:GetAttribute("EquippedAbility")
 	if abilityName then

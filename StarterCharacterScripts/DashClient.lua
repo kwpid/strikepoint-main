@@ -16,6 +16,8 @@ local dashCooldownEvent = RemoteEventsFolder:WaitForChild("DashCooldownEvent")
 
 local lastDashTime = 0
 local trailTemplate = ReplicatedStorage:FindFirstChild("DashTrail")
+local activeDashConnection = nil
+local isDashing = false
 
 if not trailTemplate then
 
@@ -67,6 +69,26 @@ end
 
 local RunService = game:GetService("RunService")
 
+local function onDashCollision(hit)
+	if not isDashing then return end
+	if hit:IsA("BasePart") and hit.Name ~= "Ball" and not hit:IsDescendantOf(character) then
+		if hit.Anchored or hit:GetMass() > 50 then
+			isDashing = false
+			local dashVelocity = rootPart:FindFirstChild("DashVelocity")
+			if dashVelocity then
+				dashVelocity:Destroy()
+			end
+			if rootPart.AssemblyLinearVelocity.Magnitude > 50 then
+				rootPart.AssemblyLinearVelocity = rootPart.AssemblyLinearVelocity.Unit * 50
+			end
+			if activeDashConnection then
+				activeDashConnection:Disconnect()
+				activeDashConnection = nil
+			end
+		end
+	end
+end
+
 local function performDash()
 	if tick() - lastDashTime < Config.Dash.COOLDOWN then return end
 	if character:GetAttribute("FeaturesLocked") then return end
@@ -75,6 +97,12 @@ local function performDash()
 	lastDashTime = tick()
 
 	if ball then
+		isDashing = true
+		if activeDashConnection then
+			activeDashConnection:Disconnect()
+		end
+		activeDashConnection = rootPart.Touched:Connect(onDashCollision)
+
 		local startTime = tick()
 		local duration = Config.Dash.DURATION
 		local startCFrame = rootPart.CFrame
@@ -85,6 +113,13 @@ local function performDash()
 
 		local connection
 		connection = RunService.Heartbeat:Connect(function(dt)
+			if not isDashing then
+				connection:Disconnect()
+				rootPart.Anchored = false
+				humanoid.AutoRotate = originalAutoRotate
+				return
+			end
+
 			local elapsed = tick() - startTime
 			local alpha = math.clamp(elapsed / duration, 0, 1)
 
@@ -99,7 +134,15 @@ local function performDash()
 				connection:Disconnect()
 				rootPart.Anchored = false
 				humanoid.AutoRotate = originalAutoRotate
-				rootPart.AssemblyLinearVelocity = direction * Config.Dash.POWER
+				if isDashing then
+					rootPart.AssemblyLinearVelocity = direction * Config.Dash.POWER
+				end
+
+				isDashing = false
+				if activeDashConnection then
+					activeDashConnection:Disconnect()
+					activeDashConnection = nil
+				end
 				return
 			end
 
@@ -129,6 +172,13 @@ local function performDash()
 		dashEvent:FireServer((ball.Position - rootPart.Position).Unit)
 
 	else
+		isDashing = true
+
+		if activeDashConnection then
+			activeDashConnection:Disconnect()
+		end
+		activeDashConnection = rootPart.Touched:Connect(onDashCollision)
+
 		local dashDirection = Vector3.zero
 		if humanoid.MoveDirection.Magnitude > 0 then
 			dashDirection = humanoid.MoveDirection
@@ -150,8 +200,16 @@ local function performDash()
 		vectorForce.VectorVelocity = dashDirection * Config.Dash.POWER
 		vectorForce.RelativeTo = Enum.ActuatorRelativeTo.World
 		vectorForce.Parent = rootPart
-
-		Debris:AddItem(vectorForce, Config.Dash.DURATION)
+		task.delay(Config.Dash.DURATION, function()
+			if vectorForce and vectorForce.Parent then
+				vectorForce:Destroy()
+			end
+			isDashing = false
+			if activeDashConnection then
+				activeDashConnection:Disconnect()
+				activeDashConnection = nil
+			end
+		end)
 
 		local t = trailTemplate:Clone()
 		local att0 = rootPart:FindFirstChild("DashAtt0") or Instance.new("Attachment", rootPart)
@@ -196,6 +254,4 @@ player.CharacterAdded:Connect(function(newChar)
 	character = newChar
 	rootPart = character:WaitForChild("HumanoidRootPart")
 	humanoid = character:WaitForChild("Humanoid")
-
-
 end)
